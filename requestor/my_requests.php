@@ -15,71 +15,9 @@ $statusFilter = $_GET['status'] ?? 'all';
 $dateFilter = $_GET['date'] ?? 'all';
 $searchQuery = $_GET['search'] ?? '';
 
-// Prepare base query
-$query = "SELECT ar.*, e.employee_name as requestor_name 
-          FROM access_requests ar
-          LEFT JOIN employees e ON ar.employee_id = e.employee_id
-          WHERE ar.employee_id = :employee_id";
+// Get individual access requests$queryIndividual = "SELECT                 ar.request_id,                ar.access_request_number,                ar.application_name,                ar.access_type,                ar.business_unit,                ar.duration,                ar.status,                ar.submission_date,                e.employee_name as requestor_name,                'individual' as request_type          FROM access_requests ar          LEFT JOIN employees e ON ar.employee_id = e.employee_id          WHERE ar.employee_id = :employee_id";// Get group access requests$queryGroup = "SELECT                 gr.id as request_id,                CONCAT('GR-', gr.id) as access_request_number,                GROUP_CONCAT(DISTINCT a.application_name SEPARATOR ', ') as application_name,                GROUP_CONCAT(DISTINCT at.access_type SEPARATOR ', ') as access_type,                NULL as business_unit,                GROUP_CONCAT(DISTINCT gra.duration_type SEPARATOR ', ') as duration,                gr.status,                gr.date_requested as submission_date,                e.employee_name as requestor_name,                'group' as request_type          FROM group_requests gr          LEFT JOIN employees e ON gr.requestor_id = e.employee_id          LEFT JOIN group_request_applications gra ON gr.id = gra.group_request_id          LEFT JOIN applications a ON gra.application_id = a.id          LEFT JOIN access_types at ON gra.access_type_id = at.id          WHERE gr.requestor_id = :employee_id          GROUP BY gr.id, gr.status, gr.date_requested, e.employee_name";
 
-// Add filters
-$params = [':employee_id' => $requestorId];
-
-if ($statusFilter !== 'all') {
-    // Check if status is an array (multiple statuses selected)
-    if (is_array($statusFilter)) {
-        $placeholders = [];
-        $i = 0;
-        foreach ($statusFilter as $status) {
-            $key = ":status".$i;
-            $placeholders[] = $key;
-            $params[$key] = $status;
-            $i++;
-        }
-        $query .= " AND ar.status IN (" . implode(',', $placeholders) . ")";
-    } else {
-        $query .= " AND ar.status = :status";
-        $params[':status'] = $statusFilter;
-    }
-}
-
-if ($dateFilter !== 'all') {
-    switch ($dateFilter) {
-        case 'today':
-            $query .= " AND DATE(ar.submission_date) = CURDATE()";
-            break;
-        case 'week':
-            $query .= " AND ar.submission_date >= DATE_SUB(CURDATE(), INTERVAL 1 WEEK)";
-            break;
-        case 'month':
-            $query .= " AND ar.submission_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";
-            break;
-    }
-}
-
-if (!empty($searchQuery)) {
-    $query .= " AND (ar.access_type LIKE :search 
-               OR ar.access_request_number LIKE :search 
-               OR ar.business_unit LIKE :search)";
-    $params[':search'] = "%$searchQuery%";
-}
-
-// Add sorting
-$query .= " ORDER BY ar.submission_date DESC";
-
-try {
-    // Prepare and execute the query
-    $stmt = $pdo->prepare($query);
-    $stmt->execute($params);
-    $requests = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Debug - Print the query and parameters
-    echo "<!-- SQL Query: $query -->";
-    echo "<!-- Params: " . json_encode($params) . " -->";
-    echo "<!-- Result Count: " . count($requests) . " -->";
-} catch (PDOException $e) {
-    error_log("Error fetching requests: " . $e->getMessage());
-    $requests = [];
-}
+// Add filters$paramsIndividual = [':employee_id' => $requestorId];$paramsGroup = [':employee_id' => $requestorId];// Apply status filterif ($statusFilter !== 'all') {    if (is_array($statusFilter)) {        // Multiple statuses selected        $placeholders = [];        $i = 0;        foreach ($statusFilter as $status) {            $key = ":status".$i;            $placeholders[] = $key;            $paramsIndividual[$key] = $status;            $paramsGroup[$key] = $status;            $i++;        }        $statusClause = " AND status IN (" . implode(',', $placeholders) . ")";        $queryIndividual .= str_replace("status", "ar.status", $statusClause);        $queryGroup .= str_replace("status", "gr.status", $statusClause);    } else {        // Single status selected        $queryIndividual .= " AND ar.status = :status";        $queryGroup .= " AND gr.status = :status";        $paramsIndividual[':status'] = $statusFilter;        $paramsGroup[':status'] = $statusFilter;    }}// Apply date filterif ($dateFilter !== 'all') {    switch ($dateFilter) {        case 'today':            $queryIndividual .= " AND DATE(ar.submission_date) = CURDATE()";            $queryGroup .= " AND DATE(gr.date_requested) = CURDATE()";            break;        case 'week':            $queryIndividual .= " AND ar.submission_date >= DATE_SUB(CURDATE(), INTERVAL 1 WEEK)";            $queryGroup .= " AND gr.date_requested >= DATE_SUB(CURDATE(), INTERVAL 1 WEEK)";            break;        case 'month':            $queryIndividual .= " AND ar.submission_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";            $queryGroup .= " AND gr.date_requested >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)";            break;    }}// Apply search filterif (!empty($searchQuery)) {    $queryIndividual .= " AND (ar.access_type LIKE :search                         OR ar.access_request_number LIKE :search                         OR ar.business_unit LIKE :search                        OR ar.application_name LIKE :search)";    $queryGroup .= " AND (a.application_name LIKE :search                    OR at.access_type LIKE :search)";    $paramsIndividual[':search'] = "%$searchQuery%";    $paramsGroup[':search'] = "%$searchQuery%";}// Add sorting$queryIndividual .= " ORDER BY ar.submission_date DESC";$queryGroup .= " ORDER BY gr.date_requested DESC";// Combine the queries with UNION$query = "($queryIndividual) UNION ALL ($queryGroup) ORDER BY submission_date DESC";// Merge params (they have the same keys so this is safe)$params = $paramsIndividual;try {    // Prepare and execute the combined query    $stmt = $pdo->prepare($query);    $stmt->execute($params);    $requests = $stmt->fetchAll(PDO::FETCH_ASSOC);        // Debug - Print the query and parameters    echo "<!-- SQL Query: $query -->";    echo "<!-- Params: " . json_encode($params) . " -->";    echo "<!-- Result Count: " . count($requests) . " -->";} catch (PDOException $e) {    error_log("Error fetching requests: " . $e->getMessage());    $requests = [];}
 ?>
 
 <!DOCTYPE html>
@@ -194,9 +132,6 @@ try {
         }
         .status-rejected {
             @apply bg-red-600 text-white border-2 border-red-700;
-        }
-        .status-testing {
-            @apply bg-blue-500 text-white border-2 border-blue-600;
         }
         
         [x-cloak] {
@@ -315,7 +250,6 @@ try {
                     <select id="status" name="status" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
                         <option value="all" <?php echo $statusFilter === 'all' ? 'selected' : ''; ?>>All Statuses</option>
                         <option value="pending" <?php echo $statusFilter === 'pending' ? 'selected' : ''; ?>>Pending</option>
-                        <option value="pending_testing" <?php echo $statusFilter === 'pending_testing' ? 'selected' : ''; ?>>Pending Testing</option>
                         <option value="approved" <?php echo $statusFilter === 'approved' || (is_array($statusFilter) && in_array('approved', $statusFilter)) ? 'selected' : ''; ?>>Approved</option>
                         <option value="rejected" <?php echo $statusFilter === 'rejected' || (is_array($statusFilter) && in_array('rejected', $statusFilter)) ? 'selected' : ''; ?>>Rejected</option>
                         <?php if (is_array($statusFilter) && in_array('approved', $statusFilter) && in_array('rejected', $statusFilter)): ?>
@@ -434,14 +368,11 @@ try {
                                 } elseif ($status === 'rejected') {
                                     $statusClass = 'status-rejected';
                                     $bgClass = 'bg-red-100';
-                                } elseif ($status === 'pending_testing') {
-                                    $statusClass = 'status-testing';
-                                    $bgClass = 'bg-blue-100';
                                 }
                                 ?>
                                 <div class="flex justify-center items-center <?php echo $bgClass; ?> rounded-lg px-2 py-1">
                                     <span class="status-badge <?php echo $statusClass; ?>">
-                                        <?php echo $status === 'pending_testing' ? 'Pending Testing' : ucfirst($status); ?>
+                                        <?php echo ucfirst($status); ?>
                                     </span>
                                 </div>
                             </td>
@@ -451,20 +382,7 @@ try {
                                 echo $date->format('M d, Y'); 
                                 ?>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <a href="view_request.php?id=<?php echo $request['id']; ?>" class="text-primary-600 hover:text-primary-800 mr-3">
-                                    <i class='bx bx-show'></i> View
-                                </a>
-                                <?php if ($status === 'pending_testing' && $request['testing_status'] === 'pending'): ?>
-                                <a href="testing_status.php?id=<?php echo $request['id']; ?>" class="text-blue-600 hover:text-blue-800 mr-3">
-                                    <i class='bx bx-test-tube'></i> Test
-                                </a>
-                                <?php endif; ?>
-                                <?php if ($status === 'pending'): ?>
-                                <a href="#" class="text-red-600 hover:text-red-800 cancel-request" data-id="<?php echo $request['id']; ?>">
-                                    <i class='bx bx-x'></i> Cancel
-                                </a>
-                                <?php endif; ?>
+                                                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">                                <?php if ($request['request_type'] === 'group'): ?>                                <a href="view_group_request.php?id=<?php echo $request['request_id']; ?>" class="text-primary-600 hover:text-primary-800 mr-3">                                    <i class='bx bx-show'></i> View                                </a>                                <?php else: ?>                                <a href="view_request.php?id=<?php echo $request['request_id']; ?>" class="text-primary-600 hover:text-primary-800 mr-3">                                    <i class='bx bx-show'></i> View                                </a>                                <?php endif; ?>                                                                <?php if ($status === 'pending'): ?>                                <?php if ($request['request_type'] === 'group'): ?>                                <a href="#" class="text-red-600 hover:text-red-800 cancel-group-request" data-id="<?php echo $request['request_id']; ?>">                                    <i class='bx bx-x'></i> Cancel                                </a>                                <?php else: ?>                                <a href="#" class="text-red-600 hover:text-red-800 cancel-request" data-id="<?php echo $request['request_id']; ?>">                                    <i class='bx bx-x'></i> Cancel                                </a>                                <?php endif; ?>                                <?php endif; ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -492,28 +410,7 @@ try {
         // Initialize AOS animation library
         AOS.init();
         
-        // Setup cancel request buttons
-        document.querySelectorAll('.cancel-request').forEach(button => {
-            button.addEventListener('click', function(e) {
-                e.preventDefault();
-                const requestId = this.getAttribute('data-id');
-                
-                Swal.fire({
-                    title: 'Cancel Request',
-                    text: 'Are you sure you want to cancel this request?',
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#d33',
-                    cancelButtonColor: '#3085d6',
-                    confirmButtonText: 'Yes, cancel it!',
-                    cancelButtonText: 'No, keep it'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        window.location.href = 'cancel_request.php?id=' + requestId;
-                    }
-                });
-            });
-        });
+                // Setup cancel individual request buttons        document.querySelectorAll('.cancel-request').forEach(button => {            button.addEventListener('click', function(e) {                e.preventDefault();                const requestId = this.getAttribute('data-id');                                Swal.fire({                    title: 'Cancel Request',                    text: 'Are you sure you want to cancel this request?',                    icon: 'warning',                    showCancelButton: true,                    confirmButtonColor: '#d33',                    cancelButtonColor: '#3085d6',                    confirmButtonText: 'Yes, cancel it!',                    cancelButtonText: 'No, keep it'                }).then((result) => {                    if (result.isConfirmed) {                        window.location.href = 'cancel_request.php?id=' + requestId;                    }                });            });        });                // Setup cancel group request buttons        document.querySelectorAll('.cancel-group-request').forEach(button => {            button.addEventListener('click', function(e) {                e.preventDefault();                const requestId = this.getAttribute('data-id');                                Swal.fire({                    title: 'Cancel Group Request',                    text: 'Are you sure you want to cancel this group access request? This will cancel access for all users in this request.',                    icon: 'warning',                    showCancelButton: true,                    confirmButtonColor: '#d33',                    cancelButtonColor: '#3085d6',                    confirmButtonText: 'Yes, cancel it!',                    cancelButtonText: 'No, keep it'                }).then((result) => {                    if (result.isConfirmed) {                        window.location.href = 'cancel_group_request.php?id=' + requestId;                    }                });            });        });
         
         // Setup DataTable if there's data
         if (document.getElementById('requestsTable')) {

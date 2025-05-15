@@ -253,13 +253,7 @@ try {
                 </span>
                 <span class="font-medium">Dashboard</span>
             </a>
-            <a href="create_request.php" class="flex items-center p-3 text-primary-600 bg-primary-50 rounded-xl transition-all duration-200 group">
-                <span class="flex items-center justify-center w-10 h-10 bg-primary-100 text-primary-600 rounded-xl mr-3">
-                    <i class='bx bx-send text-xl'></i>
-                </span>
-                <span class="font-medium">Create Request</span>
-            </a>
-            <a href="my_requests.php" class="flex items-center p-3 text-gray-700 rounded-xl transition-all duration-200 hover:bg-gray-50 hover:text-primary-600 group">
+                        <a href="create_request.php" class="flex items-center p-3 text-primary-600 bg-primary-50 rounded-xl transition-all duration-200 group">                <span class="flex items-center justify-center w-10 h-10 bg-primary-100 text-primary-600 rounded-xl mr-3">                    <i class='bx bx-send text-xl'></i>                </span>                <span class="font-medium">Individual Request</span>            </a>            <a href="create_group_request.php" class="flex items-center p-3 text-gray-700 rounded-xl transition-all duration-200 hover:bg-gray-50 hover:text-primary-600 group">                <span class="flex items-center justify-center w-10 h-10 bg-gray-100 text-gray-600 rounded-xl mr-3 group-hover:bg-primary-50 group-hover:text-primary-600 transition-all duration-200">                    <i class='bx bx-group text-xl'></i>                </span>                <span class="font-medium">Group Request</span>            </a>            <a href="my_requests.php" class="flex items-center p-3 text-gray-700 rounded-xl transition-all duration-200 hover:bg-gray-50 hover:text-primary-600 group">
                 <span class="flex items-center justify-center w-10 h-10 bg-gray-100 text-gray-600 rounded-xl mr-3 group-hover:bg-primary-50 group-hover:text-primary-600 transition-all duration-200">
                     <i class='bx bx-list-ul text-xl'></i>
                 </span>
